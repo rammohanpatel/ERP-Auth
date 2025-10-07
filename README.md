@@ -13,7 +13,7 @@
 - Matches and fills answers for security questions dynamically based on stored user preferences.
 
 ✅ **OTP Autofill Support**  
-- Provides mechanisms for clipboard-based OTP autofill or integration with custom backend APIs for seamless OTP handling.
+- Just put your <CLIENT_ID> in manifest.json for getting client_id read OAUTH_SETUP.md file
 
 ✅ **Secure Storage**  
 - Uses Chrome's `storage.sync` to securely store credentials and dynamic questions.
