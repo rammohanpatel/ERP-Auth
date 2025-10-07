@@ -50,11 +50,69 @@ chrome.storage.sync.get(["loginId", "password", "questions"], (data) => {
         const sendOTPButton = document.querySelector("#getotp");
         if (sendOTPButton) {
           sendOTPButton.click();
+          
+          // Wait for OTP field to appear and then fetch OTP automatically
+          setTimeout(() => {
+            waitForOTPField();
+          }, 10000); // Wait 10 seconds for OTP to be sent
         }
       } else {
         console.error("No matching answer found for the question:", questionText);
       }
     }
+  };
+
+  // Function to wait for OTP field and auto-fetch OTP
+  const waitForOTPField = () => {
+    const otpField = document.querySelector("#email_otp1");
+    if (otpField) {
+      // OTP field found, now fetch OTP from Gmail
+      chrome.runtime.sendMessage({ action: "fetchOTP" }, (response) => {
+        if (response && response.success) {
+          setInput("#email_otp1", response.otp);
+          
+          // Optionally auto-submit the form after filling OTP
+          setTimeout(() => {
+            const submitButton = document.querySelector("input[type='submit'], button[type='submit']");
+            if (submitButton) {
+              submitButton.click();
+            }
+          }, 1000);
+        } else {
+          console.error("Failed to fetch OTP:", response?.error);
+          // Show a notification to user
+          showOTPNotification("Failed to fetch OTP automatically. Please enter manually.");
+        }
+      });
+    } else {
+      // OTP field not found yet, keep checking
+      setTimeout(waitForOTPField, 500);
+    }
+  };
+
+  // Function to show notification to user
+  const showOTPNotification = (message) => {
+    const notification = document.createElement('div');
+    notification.style.cssText = `
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      background: #FF6B6B;
+      color: white;
+      padding: 15px;
+      border-radius: 8px;
+      z-index: 10000;
+      font-family: Arial, sans-serif;
+      font-size: 14px;
+      max-width: 300px;
+    `;
+    notification.textContent = message;
+    document.body.appendChild(notification);
+    
+    // Remove notification after 5 seconds
+    setTimeout(() => {
+      notification.remove();
+    }, 5000);
   };
 
   // Start waiting for the answer_div to become visible
