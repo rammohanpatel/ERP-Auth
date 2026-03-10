@@ -14,7 +14,7 @@
       "https://www.googleapis.com/*"
     ],
     "oauth2": {
-      "client_id": "<YOUR_CLIENT_ID>",
+      "client_id": "843095029655-favcfa2gt5h023i694qgl4bhb3qdngn9.apps.googleusercontent.com",
       "scopes": [
         "https://www.googleapis.com/auth/gmail.readonly"
       ]
@@ -22,9 +22,17 @@
 
     "content_scripts": [
     {
-     "matches": ["<all_urls>"],
-     "js": ["content.js"]
-    }],
+      "matches": ["https://erp.iitkgp.ac.in/*"],
+      "js": ["alert-override.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": ["https://erp.iitkgp.ac.in/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+    ],
     "action": {
       "default_popup": "popup.html",
       "default_icon": "icon.png"

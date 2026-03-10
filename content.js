@@ -2,7 +2,234 @@
 chrome.storage.sync.get(["loginId", "password", "questions"], (data) => {
   const { loginId, password, questions } = data;
 
-  // Helper function to set input field values
+  // ─── Modal state ────────────────────────────────────────────────────────────
+  let modalEl = null;
+  let timerInterval = null;
+
+  // ─── Build and inject the status modal ──────────────────────────────────────
+  const createModal = () => {
+    // Inject keyframe animations via a <style> tag (no inline JS, no CSP issue)
+    if (!document.getElementById('erp-modal-styles')) {
+      const style = document.createElement('style');
+      style.id = 'erp-modal-styles';
+      style.textContent = `
+        @keyframes erp-fadeIn {
+          from { opacity: 0; transform: scale(0.92); }
+          to   { opacity: 1; transform: scale(1); }
+        }
+        @keyframes erp-spin {
+          to { transform: rotate(360deg); }
+        }
+        @keyframes erp-pulse {
+          0%, 100% { opacity: 1; }
+          50%       { opacity: 0.4; }
+        }
+        @keyframes erp-shrink {
+          from { width: 100%; }
+          to   { width: 0%; }
+        }
+        #erp-otp-modal {
+          animation: erp-fadeIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+        }
+        #erp-spinner {
+          width: 48px; height: 48px;
+          border: 4px solid rgba(255,255,255,0.15);
+          border-top-color: #fff;
+          border-radius: 50%;
+          animation: erp-spin 0.9s linear infinite;
+        }
+        .erp-dot {
+          animation: erp-pulse 1.4s ease-in-out infinite;
+        }
+        .erp-dot:nth-child(2) { animation-delay: 0.2s; }
+        .erp-dot:nth-child(3) { animation-delay: 0.4s; }
+      `;
+      document.head.appendChild(style);
+    }
+
+    const overlay = document.createElement('div');
+    overlay.id = 'erp-otp-modal';
+    overlay.innerHTML = `
+      <div id="erp-modal-backdrop" style="
+        position:fixed; inset:0;
+        background: rgba(10,10,30,0.65);
+        backdrop-filter: blur(4px);
+        z-index: 99998;
+      "></div>
+
+      <div id="erp-modal-card" style="
+        position: fixed;
+        top: 50%; left: 50%;
+        transform: translate(-50%, -50%);
+        z-index: 99999;
+        width: 340px;
+        background: linear-gradient(145deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+        border-radius: 20px;
+        box-shadow: 0 25px 60px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.08);
+        overflow: hidden;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        color: #fff;
+      ">
+        <!-- Top accent bar -->
+        <div style="height:3px; background: linear-gradient(90deg,#6c63ff,#48cae4,#06d6a0);"></div>
+
+        <div style="padding: 32px 28px 24px;">
+
+          <!-- Icon + spinner row -->
+          <div style="display:flex; align-items:center; gap:18px; margin-bottom:22px;">
+            <div id="erp-spinner"></div>
+            <div>
+              <div style="font-size:11px; text-transform:uppercase; letter-spacing:2px;
+                          color:rgba(255,255,255,0.45); margin-bottom:4px;">
+                ERP Auto-Login
+              </div>
+              <div id="erp-modal-title" style="font-size:18px; font-weight:700; line-height:1.2;">
+                Sending OTP…
+              </div>
+            </div>
+          </div>
+
+          <!-- Status message -->
+          <div id="erp-modal-msg" style="
+            font-size:13.5px; color:rgba(255,255,255,0.72);
+            line-height:1.6; min-height:40px; margin-bottom:20px;
+          ">
+            OTP request sent to the ERP server.<br>
+            Waiting for your email to arrive
+            <span class="erp-dot">.</span><span class="erp-dot">.</span><span class="erp-dot">.</span>
+          </div>
+
+          <!-- Countdown badge -->
+          <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;">
+            <div style="font-size:12px; color:rgba(255,255,255,0.4);">Fetching Gmail in</div>
+            <div id="erp-countdown" style="
+              font-size:22px; font-weight:800;
+              background: linear-gradient(90deg,#6c63ff,#48cae4);
+              -webkit-background-clip:text; -webkit-text-fill-color:transparent;
+            ">10s</div>
+          </div>
+
+          <!-- Progress bar -->
+          <div style="height:5px; background:rgba(255,255,255,0.1); border-radius:99px; overflow:hidden;">
+            <div id="erp-progress" style="
+              height:100%; width:100%;
+              background: linear-gradient(90deg,#6c63ff,#48cae4,#06d6a0);
+              border-radius:99px;
+              transition: width 1s linear;
+            "></div>
+          </div>
+
+          <!-- Step indicators -->
+          <div style="display:flex; justify-content:space-between; margin-top:20px; gap:8px;">
+            ${['Credentials', 'OTP Sent', 'Fetching', 'Signing In'].map((s, i) => `
+              <div class="erp-step" data-step="${i}" style="
+                flex:1; text-align:center; font-size:10px;
+                color: ${i === 0 ? '#06d6a0' : 'rgba(255,255,255,0.3)'};
+                font-weight: ${i === 0 ? '700' : '400'};
+              ">
+                <div style="
+                  width:22px; height:22px; border-radius:50%; margin:0 auto 5px;
+                  display:flex; align-items:center; justify-content:center;
+                  font-size:11px; font-weight:700;
+                  background: ${i === 0 ? '#06d6a0' : 'rgba(255,255,255,0.08)'};
+                  color: ${i === 0 ? '#000' : 'rgba(255,255,255,0.3)'};
+                  transition: all 0.4s ease;
+                ">${i === 0 ? '✓' : i + 1}</div>
+                ${s}
+              </div>
+            `).join('')}
+          </div>
+
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    modalEl = overlay;
+  };
+
+  // ─── Update which step is active ────────────────────────────────────────────
+  const setStep = (stepIndex) => {
+    if (!modalEl) return;
+    modalEl.querySelectorAll('.erp-step').forEach((el, i) => {
+      const dot = el.querySelector('div');
+      if (i < stepIndex) {
+        // completed
+        el.style.color = '#06d6a0';
+        el.style.fontWeight = '700';
+        dot.style.background = '#06d6a0';
+        dot.style.color = '#000';
+        dot.textContent = '✓';
+      } else if (i === stepIndex) {
+        // active
+        el.style.color = '#48cae4';
+        el.style.fontWeight = '700';
+        dot.style.background = 'linear-gradient(135deg,#6c63ff,#48cae4)';
+        dot.style.color = '#fff';
+        dot.textContent = i + 1;
+      } else {
+        // pending
+        el.style.color = 'rgba(255,255,255,0.3)';
+        el.style.fontWeight = '400';
+        dot.style.background = 'rgba(255,255,255,0.08)';
+        dot.style.color = 'rgba(255,255,255,0.3)';
+        dot.textContent = i + 1;
+      }
+    });
+  };
+
+  // ─── Update modal text content ───────────────────────────────────────────────
+  const setModalContent = (title, msg) => {
+    if (!modalEl) return;
+    const t = modalEl.querySelector('#erp-modal-title');
+    const m = modalEl.querySelector('#erp-modal-msg');
+    if (t) t.textContent = title;
+    if (m) m.innerHTML = msg;
+  };
+
+  // ─── Countdown timer (10 → 0) ────────────────────────────────────────────────
+  const startCountdown = (seconds, onDone) => {
+    if (!modalEl) return;
+    const countEl  = modalEl.querySelector('#erp-countdown');
+    const progEl   = modalEl.querySelector('#erp-progress');
+    let remaining  = seconds;
+
+    const tick = () => {
+      if (!modalEl) return;
+      remaining--;
+      if (countEl) countEl.textContent = remaining + 's';
+      if (progEl)  progEl.style.width  = (remaining / seconds * 100) + '%';
+      if (remaining <= 0) {
+        clearInterval(timerInterval);
+        onDone();
+      }
+    };
+
+    if (progEl) progEl.style.width = '100%';
+    timerInterval = setInterval(tick, 1000);
+  };
+
+  // ─── Dismiss modal with a success/failure flash ───────────────────────────────
+  const closeModal = (success = true) => {
+    if (!modalEl) return;
+    clearInterval(timerInterval);
+
+    const card = modalEl.querySelector('#erp-modal-card');
+    if (card) {
+      card.style.transition = 'opacity 0.5s ease, transform 0.5s ease';
+      card.style.opacity    = '0';
+      card.style.transform  = 'translate(-50%, -48%) scale(0.95)';
+    }
+    const backdrop = modalEl.querySelector('#erp-modal-backdrop');
+    if (backdrop) {
+      backdrop.style.transition = 'opacity 0.5s ease';
+      backdrop.style.opacity    = '0';
+    }
+    setTimeout(() => {
+      if (modalEl) { modalEl.remove(); modalEl = null; }
+    }, 500);
+  };
+
+  // ─── Helper function to set input field values ───────────────────────────────
   function setInput(selector, value) {
     const input = document.querySelector(selector);
     if (input) {
@@ -11,50 +238,61 @@ chrome.storage.sync.get(["loginId", "password", "questions"], (data) => {
     }
   }
 
-  // Autofill login ID and password
+  // ─── Autofill login ID and password ──────────────────────────────────────────
   setInput("#user_id", loginId);
+  // Dispatch blur so the page's jQuery handler fires the security-question AJAX call
+  const userIdInput = document.querySelector("#user_id");
+  if (userIdInput) {
+    userIdInput.dispatchEvent(new Event("blur", { bubbles: true }));
+  }
   setInput("#password", password);
 
-  // Wait for the answer_div to become visible
+  // ─── Wait for the answer_div to become visible ───────────────────────────────
   const waitForAnswerDiv = () => {
     const answerDiv = document.querySelector("#answer_div");
     if (answerDiv && !answerDiv.classList.contains("hidden")) {
       handleDynamicQuestion();
     } else {
-      setTimeout(waitForAnswerDiv, 100); // Check again after 100ms
+      setTimeout(waitForAnswerDiv, 100);
     }
   };
 
-  // Function to handle dynamic question
+  // ─── Handle the security question ────────────────────────────────────────────
   const handleDynamicQuestion = () => {
     const questionLabel = document.querySelector("#question");
-    const answerInput = document.querySelector("#answer");
+    const answerInput   = document.querySelector("#answer");
 
     if (questionLabel && answerInput) {
       const questionText = questionLabel.textContent.trim();
       let answer;
 
-      // Match the question text with stored answers
-      if (questionText === questions.question1) {
-        answer = questions.answer1;
-      } else if (questionText === questions.question2) {
-        answer = questions.answer2;
-      } else if (questionText === questions.question3) {
-        answer = questions.answer3;
-      }
+      if (questionText === questions.question1)      answer = questions.answer1;
+      else if (questionText === questions.question2) answer = questions.answer2;
+      else if (questionText === questions.question3) answer = questions.answer3;
 
       if (answer) {
         setInput("#answer", answer);
 
-        // Trigger the "Send OTP" button
         const sendOTPButton = document.querySelector("#getotp");
         if (sendOTPButton) {
           sendOTPButton.click();
-          
-          // Wait for OTP field to appear and then fetch OTP automatically
-          setTimeout(() => {
+
+          // Show the modal as soon as OTP is sent
+          createModal();
+          setStep(1); // "OTP Sent" step active
+
+          // Start 10-second countdown; after it expires, start fetching
+          startCountdown(10, () => {
+            setModalContent(
+              'Fetching OTP…',
+              'Searching your Gmail inbox for the latest OTP<span class="erp-dot">.</span><span class="erp-dot">.</span><span class="erp-dot">.</span>'
+            );
+            setStep(2); // "Fetching" step active
+            // Hide countdown badge when it's no longer relevant
+            const cdEl = modalEl && modalEl.querySelector('#erp-countdown');
+            if (cdEl) cdEl.closest('div').style.display = 'none';
             waitForOTPField();
-          }, 10000); // Wait 10 seconds for OTP to be sent
+          });
         }
       } else {
         console.error("No matching answer found for the question:", questionText);
@@ -62,61 +300,52 @@ chrome.storage.sync.get(["loginId", "password", "questions"], (data) => {
     }
   };
 
-  // Function to wait for OTP field and auto-fetch OTP
+  // ─── Wait for OTP field and auto-fetch OTP ────────────────────────────────────
   const waitForOTPField = () => {
     const otpField = document.querySelector("#email_otp1");
     if (otpField) {
-      // OTP field found, now fetch OTP from Gmail
       chrome.runtime.sendMessage({ action: "fetchOTP" }, (response) => {
         if (response && response.success) {
           setInput("#email_otp1", response.otp);
-          
-          // Optionally auto-submit the form after filling OTP
+
+          setModalContent('OTP Filled! Signing in…', 'OTP found and entered. Submitting your login now…');
+          setStep(3); // "Signing In" step active
+          // Swap spinner colour to green
+          const spinner = modalEl && modalEl.querySelector('#erp-spinner');
+          if (spinner) {
+            spinner.style.borderTopColor = '#06d6a0';
+          }
+
           setTimeout(() => {
-            const submitButton = document.querySelector("input[type='submit'], button[type='submit']");
-            if (submitButton) {
-              submitButton.click();
-            }
-          }, 1000);
+            const submitButton = document.querySelector("#loginFormSubmitButton");
+            if (submitButton) submitButton.click();
+            closeModal(true);
+          }, 1200);
+
         } else {
           console.error("Failed to fetch OTP:", response?.error);
-          // Show a notification to user
-          showOTPNotification("Failed to fetch OTP automatically. Please enter manually.");
+          setModalContent(
+            '⚠ Fetch Failed',
+            'Could not retrieve OTP from Gmail automatically.<br>Please enter it manually in the OTP field.'
+          );
+          // Turn spinner into a warning icon
+          const spinner = modalEl && modalEl.querySelector('#erp-spinner');
+          if (spinner) {
+            spinner.style.animation = 'none';
+            spinner.style.border    = '4px solid #ff6b6b';
+            spinner.style.display   = 'flex';
+            spinner.style.alignItems = 'center';
+            spinner.style.justifyContent = 'center';
+            spinner.innerHTML = '<span style="font-size:22px;color:#ff6b6b">!</span>';
+          }
+          setTimeout(() => closeModal(false), 5000);
         }
       });
     } else {
-      // OTP field not found yet, keep checking
       setTimeout(waitForOTPField, 500);
     }
   };
 
-  // Function to show notification to user
-  const showOTPNotification = (message) => {
-    const notification = document.createElement('div');
-    notification.style.cssText = `
-      position: fixed;
-      top: 20px;
-      right: 20px;
-      background: #FF6B6B;
-      color: white;
-      padding: 15px;
-      border-radius: 8px;
-      z-index: 10000;
-      font-family: Arial, sans-serif;
-      font-size: 14px;
-      max-width: 300px;
-    `;
-    notification.textContent = message;
-    document.body.appendChild(notification);
-    
-    // Remove notification after 5 seconds
-    setTimeout(() => {
-      notification.remove();
-    }, 5000);
-  };
-
-  // Start waiting for the answer_div to become visible
+  // ─── Start the flow ───────────────────────────────────────────────────────────
   waitForAnswerDiv();
 });
-
-  
