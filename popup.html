@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
+  <meta charset="UTF-8">
   <title>Auto ERP Login</title>
   <style>
     body {
@@ -83,6 +84,23 @@
       margin-bottom: 15px;
     }
 
+    /* ── Gmail connection card ── */
+    #gmail-card {
+      margin-top: 22px;
+      border-radius: 10px;
+      overflow: hidden;
+      border: 1px solid #333;
+    }
+
+    #gmail-scope-note {
+      padding: 10px 14px;
+      font-size: 11.5px;
+      color: #666;
+      background: #1a1a1a;
+      border-top: 1px solid #2a2a2a;
+      line-height: 1.5;
+    }
+
   </style>
 </head>
 <body>
@@ -119,6 +137,15 @@
   </div>
 
   <button id="save">Save</button>
+
+  <!-- Gmail connection status -->
+  <div id="gmail-card">
+    <div id="gmail-scope-note">
+      The extension reads your Gmail <strong style="color:#ccc">only</strong> to extract the ERP OTP.
+      No emails are stored or shared.
+    </div>
+  </div>
+
 </body>
 <script src="popup.js"></script>
 </html>

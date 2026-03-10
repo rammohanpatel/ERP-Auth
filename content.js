@@ -300,49 +300,133 @@ chrome.storage.sync.get(["loginId", "password", "questions"], (data) => {
     }
   };
 
-  // ─── Wait for OTP field and auto-fetch OTP ────────────────────────────────────
+  // ─── Retry configuration ──────────────────────────────────────────────────────
+  const MAX_OTP_RETRIES   = 5;   // max Gmail fetch attempts
+  const RETRY_DELAY_MS    = 5000; // wait between retries (ms)
+  const OTP_FIELD_TIMEOUT = 60;   // max polls for the OTP field (×500 ms = 30 s)
+
+  // ─── Show or update the retry badge inside the modal ─────────────────────────
+  const setRetryBadge = (attempt) => {
+    if (!modalEl) return;
+    let badge = modalEl.querySelector('#erp-retry-badge');
+    if (!badge) {
+      badge = document.createElement('div');
+      badge.id = 'erp-retry-badge';
+      badge.style.cssText = `
+        margin-top: 14px;
+        display: flex; align-items: center; gap: 10px;
+        background: rgba(255,255,255,0.05);
+        border: 1px solid rgba(255,255,255,0.1);
+        border-radius: 8px;
+        padding: 8px 12px;
+        font-size: 12px; color: rgba(255,255,255,0.55);
+      `;
+      const inner = modalEl.querySelector('#erp-modal-card > div');
+      if (inner) inner.appendChild(badge);
+    }
+    const dots = Array.from({ length: MAX_OTP_RETRIES }, (_, i) => {
+      const active  = i < attempt;
+      const current = i === attempt - 1;
+      const color   = active
+        ? (current ? '#f9c74f' : '#06d6a0')
+        : 'rgba(255,255,255,0.15)';
+      return `<span style="
+        display:inline-block; width:8px; height:8px; border-radius:50%;
+        background:${color}; transition:background 0.3s;
+        ${current ? 'box-shadow:0 0 6px #f9c74f;' : ''}
+      "></span>`;
+    }).join('');
+    badge.innerHTML = `
+      <span>Attempt</span>
+      <span style="font-weight:700; color:#f9c74f; font-size:13px;">
+        ${attempt} / ${MAX_OTP_RETRIES}
+      </span>
+      <span style="display:flex; gap:4px; margin-left:4px;">${dots}</span>
+    `;
+  };
+
+  // ─── Core OTP fetch with retry loop ──────────────────────────────────────────
+  const attemptFetchOTP = (attempt) => {
+    setRetryBadge(attempt);
+    setModalContent(
+      attempt === 1 ? 'Fetching OTP...' : `Retrying... (${attempt}/${MAX_OTP_RETRIES})`,
+      'Searching your Gmail inbox for the latest OTP' +
+      '<span class="erp-dot">.</span><span class="erp-dot">.</span><span class="erp-dot">.</span>'
+    );
+
+    chrome.runtime.sendMessage({ action: "fetchOTP" }, (response) => {
+      if (response && response.success) {
+        // ── Success ──────────────────────────────────────────────────────────
+        setInput("#email_otp1", response.otp);
+        setModalContent('OTP Filled! Signing in...', 'OTP found and entered. Submitting your login now...');
+        setStep(3);
+        const spinner = modalEl && modalEl.querySelector('#erp-spinner');
+        if (spinner) spinner.style.borderTopColor = '#06d6a0';
+        // Remove retry badge on success
+        const badge = modalEl && modalEl.querySelector('#erp-retry-badge');
+        if (badge) badge.remove();
+
+        setTimeout(() => {
+          const submitButton = document.querySelector("#loginFormSubmitButton");
+          if (submitButton) submitButton.click();
+          closeModal(true);
+        }, 1200);
+
+      } else if (attempt < MAX_OTP_RETRIES) {
+        // ── Failed but retries remain — show countdown before next attempt ──
+        console.warn(`OTP fetch attempt ${attempt} failed. Retrying in ${RETRY_DELAY_MS / 1000}s...`);
+        let secsLeft = RETRY_DELAY_MS / 1000;
+
+        const retryInterval = setInterval(() => {
+          secsLeft--;
+          setModalContent(
+            `Retrying in ${secsLeft}s... (${attempt}/${MAX_OTP_RETRIES})`,
+            'OTP not found in Gmail. Waiting before next attempt' +
+            '<span class="erp-dot">.</span><span class="erp-dot">.</span><span class="erp-dot">.</span>'
+          );
+          if (secsLeft <= 0) {
+            clearInterval(retryInterval);
+            attemptFetchOTP(attempt + 1);
+          }
+        }, 1000);
+
+      } else {
+        // ── All retries exhausted ─────────────────────────────────────────
+        console.error(`OTP fetch failed after ${MAX_OTP_RETRIES} attempts.`);
+        setModalContent(
+          'All Attempts Failed',
+          `Could not retrieve OTP after ${MAX_OTP_RETRIES} attempts.<br>Please enter it manually in the OTP field.`
+        );
+        const spinner = modalEl && modalEl.querySelector('#erp-spinner');
+        if (spinner) {
+          spinner.style.animation        = 'none';
+          spinner.style.border           = '4px solid #ff6b6b';
+          spinner.style.display          = 'flex';
+          spinner.style.alignItems       = 'center';
+          spinner.style.justifyContent   = 'center';
+          spinner.innerHTML = '<span style="font-size:22px;color:#ff6b6b">!</span>';
+        }
+        setTimeout(() => closeModal(false), 5000);
+      }
+    });
+  };
+
+  // ─── Wait for OTP field to appear, then kick off fetch ───────────────────────
+  let otpFieldPolls = 0;
   const waitForOTPField = () => {
     const otpField = document.querySelector("#email_otp1");
     if (otpField) {
-      chrome.runtime.sendMessage({ action: "fetchOTP" }, (response) => {
-        if (response && response.success) {
-          setInput("#email_otp1", response.otp);
-
-          setModalContent('OTP Filled! Signing in…', 'OTP found and entered. Submitting your login now…');
-          setStep(3); // "Signing In" step active
-          // Swap spinner colour to green
-          const spinner = modalEl && modalEl.querySelector('#erp-spinner');
-          if (spinner) {
-            spinner.style.borderTopColor = '#06d6a0';
-          }
-
-          setTimeout(() => {
-            const submitButton = document.querySelector("#loginFormSubmitButton");
-            if (submitButton) submitButton.click();
-            closeModal(true);
-          }, 1200);
-
-        } else {
-          console.error("Failed to fetch OTP:", response?.error);
-          setModalContent(
-            '⚠ Fetch Failed',
-            'Could not retrieve OTP from Gmail automatically.<br>Please enter it manually in the OTP field.'
-          );
-          // Turn spinner into a warning icon
-          const spinner = modalEl && modalEl.querySelector('#erp-spinner');
-          if (spinner) {
-            spinner.style.animation = 'none';
-            spinner.style.border    = '4px solid #ff6b6b';
-            spinner.style.display   = 'flex';
-            spinner.style.alignItems = 'center';
-            spinner.style.justifyContent = 'center';
-            spinner.innerHTML = '<span style="font-size:22px;color:#ff6b6b">!</span>';
-          }
-          setTimeout(() => closeModal(false), 5000);
-        }
-      });
-    } else {
+      attemptFetchOTP(1); // start at attempt 1
+    } else if (otpFieldPolls < OTP_FIELD_TIMEOUT) {
+      otpFieldPolls++;
       setTimeout(waitForOTPField, 500);
+    } else {
+      // OTP field never appeared — give up gracefully
+      setModalContent(
+        'Timeout',
+        'The OTP input field did not appear. Please refresh and try again.'
+      );
+      setTimeout(() => closeModal(false), 4000);
     }
   };
 
