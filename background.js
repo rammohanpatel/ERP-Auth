@@ -50,8 +50,7 @@ async function fetchOTPFromGmail(sentAt) {
       // We subtract a 15-second buffer to account for browser/Gmail clock skew —
       // if the browser clock is ahead of Google's servers, a freshly sent email
       // can appear to have internalDate < sentAt and get incorrectly rejected.
-      const CLOCK_SKEW_BUFFER_MS = 15000;
-      if (sentAt && parseInt(meta.internalDate, 10) < (sentAt - CLOCK_SKEW_BUFFER_MS)) continue;
+      if (sentAt && parseInt(meta.internalDate, 10) < (sentAt)) continue;
 
       // Fresh email — fetch full body and extract OTP
       const fullRes = await fetch(
