@@ -28,7 +28,15 @@ chrome.storage.sync.get(["loginId", "password", "questions"], (data) => {
           from { width: 100%; }
           to   { width: 0%; }
         }
+        /* Wrapper is a plain fixed overlay — NO transform here, so it never
+           creates a stacking context that would break the card's centering. */
         #erp-otp-modal {
+          position: fixed; inset: 0;
+          display: flex; align-items: center; justify-content: center;
+          z-index: 99998;
+        }
+        /* Animation lives on the card itself, not the wrapper */
+        #erp-modal-card {
           animation: erp-fadeIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
         }
         #erp-spinner {
@@ -54,14 +62,12 @@ chrome.storage.sync.get(["loginId", "password", "questions"], (data) => {
         position:fixed; inset:0;
         background: rgba(10,10,30,0.65);
         backdrop-filter: blur(4px);
-        z-index: 99998;
+        z-index: -1;
       "></div>
 
       <div id="erp-modal-card" style="
-        position: fixed;
-        top: 50%; left: 50%;
-        transform: translate(-50%, -50%);
-        z-index: 99999;
+        position: relative;
+        z-index: 1;
         width: 340px;
         background: linear-gradient(145deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
         border-radius: 20px;
