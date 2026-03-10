@@ -8,73 +8,64 @@ chrome.action.onClicked.addListener((tab) => {
 // Handle messages from popup
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === "fetchOTP") {
-    fetchOTPFromGmail()
+    fetchOTPFromGmail(request.sentAt)
       .then(otp => {
         sendResponse({ success: true, otp: otp });
       })
       .catch(error => {
-        console.error("Error fetching OTP:", error);
         sendResponse({ success: false, error: error.message });
       });
     return true; // Keep message channel open for async response
   }
 });
 
-async function fetchOTPFromGmail() {
+async function fetchOTPFromGmail(sentAt) {
   try {
-    // Get OAuth token
     const token = await getGoogleAuthToken();
-    
-    // Search for recent OTP emails
+
     const searchQuery = 'subject:(OTP OR "one time password" OR "verification code") newer_than:5m';
     const messagesResponse = await fetch(
-      `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(searchQuery)}&maxResults=5`,
-      {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      }
+      `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(searchQuery)}&maxResults=10`,
+      { headers: { 'Authorization': `Bearer ${token}` } }
     );
 
-    if (!messagesResponse.ok) {
-      throw new Error(`Gmail API error: ${messagesResponse.status}`);
-    }
+    if (!messagesResponse.ok) throw new Error(`Gmail API error: ${messagesResponse.status}`);
 
     const messagesData = await messagesResponse.json();
-    
     if (!messagesData.messages || messagesData.messages.length === 0) {
-      throw new Error("No recent OTP emails found");
+      throw new Error("No OTP email found yet");
     }
 
-    // Get the most recent message
-    const messageId = messagesData.messages[0].id;
-    const messageResponse = await fetch(
-      `https://gmail.googleapis.com/gmail/v1/users/me/messages/${messageId}?format=full`,
-      {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      }
-    );
+    for (const { id } of messagesData.messages) {
+      // Cheap metadata fetch first — just need internalDate to check freshness
+      const metaRes = await fetch(
+        `https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}?format=metadata&metadataHeaders=subject`,
+        { headers: { 'Authorization': `Bearer ${token}` } }
+      );
+      if (!metaRes.ok) continue;
 
-    if (!messageResponse.ok) {
-      throw new Error(`Failed to fetch message: ${messageResponse.status}`);
+      const meta = await metaRes.json();
+
+      // Skip emails that clearly pre-date the OTP request.
+      // We subtract a 15-second buffer to account for browser/Gmail clock skew —
+      // if the browser clock is ahead of Google's servers, a freshly sent email
+      // can appear to have internalDate < sentAt and get incorrectly rejected.
+      const CLOCK_SKEW_BUFFER_MS = 15000;
+      if (sentAt && parseInt(meta.internalDate, 10) < (sentAt - CLOCK_SKEW_BUFFER_MS)) continue;
+
+      // Fresh email — fetch full body and extract OTP
+      const fullRes = await fetch(
+        `https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}?format=full`,
+        { headers: { 'Authorization': `Bearer ${token}` } }
+      );
+      if (!fullRes.ok) continue;
+
+      const otp = extractOTPFromMessage(await fullRes.json());
+      if (otp) return otp;
     }
 
-    const messageData = await messageResponse.json();
-    
-    // Extract OTP from email content
-    const otp = extractOTPFromMessage(messageData);
-    
-    if (!otp) {
-      throw new Error("Could not extract OTP from email");
-    }
-
-    return otp;
+    throw new Error("No fresh OTP email found yet");
   } catch (error) {
-    console.error("Error in fetchOTPFromGmail:", error);
     throw error;
   }
 }

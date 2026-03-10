@@ -3,8 +3,9 @@ chrome.storage.sync.get(["loginId", "password", "questions"], (data) => {
   const { loginId, password, questions } = data;
 
   // ─── Modal state ────────────────────────────────────────────────────────────
-  let modalEl = null;
+  let modalEl       = null;
   let timerInterval = null;
+  let retryInterval = null; // tracked here so closeModal can always cancel it
 
   // ─── Build and inject the status modal ──────────────────────────────────────
   const createModal = () => {
@@ -107,7 +108,7 @@ chrome.storage.sync.get(["loginId", "password", "questions"], (data) => {
 
           <!-- Countdown badge -->
           <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;">
-            <div style="font-size:12px; color:rgba(255,255,255,0.4);">Fetching Gmail in</div>
+            <div id="erp-countdown-label" style="font-size:12px; color:rgba(255,255,255,0.4);">Timeout in</div>
             <div id="erp-countdown" style="
               font-size:22px; font-weight:800;
               background: linear-gradient(90deg,#6c63ff,#48cae4);
@@ -218,6 +219,7 @@ chrome.storage.sync.get(["loginId", "password", "questions"], (data) => {
   const closeModal = (success = true) => {
     if (!modalEl) return;
     clearInterval(timerInterval);
+    clearInterval(retryInterval); // stop any in-progress retry countdown
 
     const card = modalEl.querySelector('#erp-modal-card');
     if (card) {
@@ -281,24 +283,30 @@ chrome.storage.sync.get(["loginId", "password", "questions"], (data) => {
 
         const sendOTPButton = document.querySelector("#getotp");
         if (sendOTPButton) {
+          const startedAt = Date.now(); // used to reject emails older than this
           sendOTPButton.click();
 
-          // Show the modal as soon as OTP is sent
-          createModal();
-          setStep(1); // "OTP Sent" step active
+          // Ensure the OTP section is visible — body onload calls
+          // emalotpDivShowHide('REMOTE') which does this, but we do it
+          // explicitly here in case of any timing race.
+          const otpDiv = document.querySelector("#emailotpdiv");
+          if (otpDiv) otpDiv.classList.remove("hidden");
 
-          // Start 10-second countdown; after it expires, start fetching
-          startCountdown(10, () => {
-            setModalContent(
-              'Fetching OTP…',
-              'Searching your Gmail inbox for the latest OTP<span class="erp-dot">.</span><span class="erp-dot">.</span><span class="erp-dot">.</span>'
-            );
-            setStep(2); // "Fetching" step active
-            // Hide countdown badge when it's no longer relevant
-            const cdEl = modalEl && modalEl.querySelector('#erp-countdown');
-            if (cdEl) cdEl.closest('div').style.display = 'none';
-            waitForOTPField();
-          });
+          createModal();
+          setStep(1);
+
+          // Relabel the countdown row to reflect "listening" rather than "waiting"
+          const cdLabel = modalEl && modalEl.querySelector('#erp-countdown-label');
+          if (cdLabel) cdLabel.textContent = 'Timeout in';
+
+          // Move straight to "Fetching" step and start polling immediately
+          setStep(2);
+          setModalContent(
+            'Waiting for OTP...',
+            'Listening for your OTP email' +
+            '<span class="erp-dot">.</span><span class="erp-dot">.</span><span class="erp-dot">.</span>'
+          );
+          startOTPPolling(startedAt);
         }
       } else {
         console.error("No matching answer found for the question:", questionText);
@@ -306,134 +314,65 @@ chrome.storage.sync.get(["loginId", "password", "questions"], (data) => {
     }
   };
 
-  // ─── Retry configuration ──────────────────────────────────────────────────────
-  const MAX_OTP_RETRIES   = 5;   // max Gmail fetch attempts
-  const RETRY_DELAY_MS    = 5000; // wait between retries (ms)
-  const OTP_FIELD_TIMEOUT = 60;   // max polls for the OTP field (×500 ms = 30 s)
+  // ─── OTP polling ─────────────────────────────────────────────────────────────
+  const MAX_POLL_SECONDS = 60;
 
-  // ─── Show or update the retry badge inside the modal ─────────────────────────
-  const setRetryBadge = (attempt) => {
-    if (!modalEl) return;
-    let badge = modalEl.querySelector('#erp-retry-badge');
-    if (!badge) {
-      badge = document.createElement('div');
-      badge.id = 'erp-retry-badge';
-      badge.style.cssText = `
-        margin-top: 14px;
-        display: flex; align-items: center; gap: 10px;
-        background: rgba(255,255,255,0.05);
-        border: 1px solid rgba(255,255,255,0.1);
-        border-radius: 8px;
-        padding: 8px 12px;
-        font-size: 12px; color: rgba(255,255,255,0.55);
-      `;
-      const inner = modalEl.querySelector('#erp-modal-card > div');
-      if (inner) inner.appendChild(badge);
-    }
-    const dots = Array.from({ length: MAX_OTP_RETRIES }, (_, i) => {
-      const active  = i < attempt;
-      const current = i === attempt - 1;
-      const color   = active
-        ? (current ? '#f9c74f' : '#06d6a0')
-        : 'rgba(255,255,255,0.15)';
-      return `<span style="
-        display:inline-block; width:8px; height:8px; border-radius:50%;
-        background:${color}; transition:background 0.3s;
-        ${current ? 'box-shadow:0 0 6px #f9c74f;' : ''}
-      "></span>`;
-    }).join('');
-    badge.innerHTML = `
-      <span>Attempt</span>
-      <span style="font-weight:700; color:#f9c74f; font-size:13px;">
-        ${attempt} / ${MAX_OTP_RETRIES}
-      </span>
-      <span style="display:flex; gap:4px; margin-left:4px;">${dots}</span>
-    `;
-  };
+  const startOTPPolling = (startedAt) => {
+    let elapsed = 0;
+    let otpFound = false; // guard against multiple in-flight responses all succeeding
 
-  // ─── Core OTP fetch with retry loop ──────────────────────────────────────────
-  const attemptFetchOTP = (attempt) => {
-    setRetryBadge(attempt);
-    setModalContent(
-      attempt === 1 ? 'Fetching OTP...' : `Retrying... (${attempt}/${MAX_OTP_RETRIES})`,
-      'Searching your Gmail inbox for the latest OTP' +
-      '<span class="erp-dot">.</span><span class="erp-dot">.</span><span class="erp-dot">.</span>'
-    );
+    // Initialise the countdown display
+    const countEl = modalEl && modalEl.querySelector('#erp-countdown');
+    const progEl  = modalEl && modalEl.querySelector('#erp-progress');
+    if (countEl) countEl.textContent = MAX_POLL_SECONDS + 's';
+    if (progEl)  progEl.style.width  = '100%';
 
-    chrome.runtime.sendMessage({ action: "fetchOTP" }, (response) => {
-      if (response && response.success) {
-        // ── Success ──────────────────────────────────────────────────────────
+    retryInterval = setInterval(() => {
+      elapsed++;
+      const remaining = MAX_POLL_SECONDS - elapsed;
+
+      // Update countdown display
+      if (countEl) countEl.textContent = remaining + 's';
+      if (progEl)  progEl.style.width  = (remaining / MAX_POLL_SECONDS * 100) + '%';
+
+      // Timed out
+      if (remaining <= 0) {
+        clearInterval(retryInterval);
+        setModalContent('Timed Out', 'No OTP received within 60 seconds.<br>Please enter it manually.');
+        const spinner = modalEl && modalEl.querySelector('#erp-spinner');
+        if (spinner) {
+          spinner.style.animation      = 'none';
+          spinner.style.border         = '4px solid #ff6b6b';
+          spinner.style.display        = 'flex';
+          spinner.style.alignItems     = 'center';
+          spinner.style.justifyContent = 'center';
+          spinner.innerHTML = '<span style="font-size:22px;color:#ff6b6b">!</span>';
+        }
+        setTimeout(() => closeModal(false), 5000);
+        return;
+      }
+
+      // Poll Gmail — only accept emails that arrived after we sent the OTP
+      chrome.runtime.sendMessage({ action: "fetchOTP", sentAt: startedAt }, (response) => {
+        if (!response || !response.success) return; // not arrived yet, keep polling
+        if (otpFound) return; // a previous in-flight response already handled this
+
+        // OTP found — stop polling immediately
+        otpFound = true;
+        clearInterval(retryInterval);
         setInput("#email_otp1", response.otp);
         setModalContent('OTP Filled! Signing in...', 'OTP found and entered. Submitting your login now...');
         setStep(3);
         const spinner = modalEl && modalEl.querySelector('#erp-spinner');
         if (spinner) spinner.style.borderTopColor = '#06d6a0';
-        // Remove retry badge on success
-        const badge = modalEl && modalEl.querySelector('#erp-retry-badge');
-        if (badge) badge.remove();
 
         setTimeout(() => {
           const submitButton = document.querySelector("#loginFormSubmitButton");
           if (submitButton) submitButton.click();
           closeModal(true);
         }, 1200);
-
-      } else if (attempt < MAX_OTP_RETRIES) {
-        // ── Failed but retries remain — show countdown before next attempt ──
-        console.warn(`OTP fetch attempt ${attempt} failed. Retrying in ${RETRY_DELAY_MS / 1000}s...`);
-        let secsLeft = RETRY_DELAY_MS / 1000;
-
-        const retryInterval = setInterval(() => {
-          secsLeft--;
-          setModalContent(
-            `Retrying in ${secsLeft}s... (${attempt}/${MAX_OTP_RETRIES})`,
-            'OTP not found in Gmail. Waiting before next attempt' +
-            '<span class="erp-dot">.</span><span class="erp-dot">.</span><span class="erp-dot">.</span>'
-          );
-          if (secsLeft <= 0) {
-            clearInterval(retryInterval);
-            attemptFetchOTP(attempt + 1);
-          }
-        }, 1000);
-
-      } else {
-        // ── All retries exhausted ─────────────────────────────────────────
-        console.error(`OTP fetch failed after ${MAX_OTP_RETRIES} attempts.`);
-        setModalContent(
-          'All Attempts Failed',
-          `Could not retrieve OTP after ${MAX_OTP_RETRIES} attempts.<br>Please enter it manually in the OTP field.`
-        );
-        const spinner = modalEl && modalEl.querySelector('#erp-spinner');
-        if (spinner) {
-          spinner.style.animation        = 'none';
-          spinner.style.border           = '4px solid #ff6b6b';
-          spinner.style.display          = 'flex';
-          spinner.style.alignItems       = 'center';
-          spinner.style.justifyContent   = 'center';
-          spinner.innerHTML = '<span style="font-size:22px;color:#ff6b6b">!</span>';
-        }
-        setTimeout(() => closeModal(false), 5000);
-      }
-    });
-  };
-
-  // ─── Wait for OTP field to appear, then kick off fetch ───────────────────────
-  let otpFieldPolls = 0;
-  const waitForOTPField = () => {
-    const otpField = document.querySelector("#email_otp1");
-    if (otpField) {
-      attemptFetchOTP(1); // start at attempt 1
-    } else if (otpFieldPolls < OTP_FIELD_TIMEOUT) {
-      otpFieldPolls++;
-      setTimeout(waitForOTPField, 500);
-    } else {
-      // OTP field never appeared — give up gracefully
-      setModalContent(
-        'Timeout',
-        'The OTP input field did not appear. Please refresh and try again.'
-      );
-      setTimeout(() => closeModal(false), 4000);
-    }
+      });
+    }, 1000); // fire every second
   };
 
   // ─── Start the flow ───────────────────────────────────────────────────────────
