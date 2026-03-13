@@ -1,16 +1,15 @@
 {
     "manifest_version": 3,
     "name": "Auto ERP Login",
+    "key": "mfapghpikfkfhejochhihcokmbjeheeg",
     "version": "2.0",
     "description": "Automatically log in to ERP by autofilling fields.",
     "permissions": [
-      "storage", 
-      "scripting", 
-      "activeTab", 
+      "storage",
       "identity"
     ],
     "host_permissions": [
-      "<all_urls>",
+      "https://erp.iitkgp.ac.in/*",
       "https://www.googleapis.com/*"
     ],
     "oauth2": {
