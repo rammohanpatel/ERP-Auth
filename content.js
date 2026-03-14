@@ -80,6 +80,16 @@ chrome.storage.sync.get(["loginId", "password", "questions"], (data) => {
         <!-- Top accent bar -->
         <div style="height:3px; background: linear-gradient(90deg,#6c63ff,#48cae4,#06d6a0);"></div>
 
+        <!-- Close button -->
+        <button id="erp-modal-close" style="
+          position:absolute; top:14px; right:14px;
+          width:28px; height:28px; border-radius:50%;
+          background:rgba(255,255,255,0.08); border:none;
+          color:rgba(255,255,255,0.55); font-size:16px; line-height:1;
+          cursor:pointer; display:flex; align-items:center; justify-content:center;
+          transition: background 0.2s, color 0.2s;
+        " title="Abort">&times;</button>
+
         <div style="padding: 32px 28px 24px;">
 
           <!-- Icon + spinner row -->
@@ -152,6 +162,20 @@ chrome.storage.sync.get(["loginId", "password", "questions"], (data) => {
     `;
     document.body.appendChild(overlay);
     modalEl = overlay;
+
+    // Wire up close button — abort the whole OTP flow
+    const closeBtn = overlay.querySelector('#erp-modal-close');
+    if (closeBtn) {
+      closeBtn.addEventListener('mouseenter', () => {
+        closeBtn.style.background = 'rgba(255,100,100,0.25)';
+        closeBtn.style.color      = '#fff';
+      });
+      closeBtn.addEventListener('mouseleave', () => {
+        closeBtn.style.background = 'rgba(255,255,255,0.08)';
+        closeBtn.style.color      = 'rgba(255,255,255,0.55)';
+      });
+      closeBtn.addEventListener('click', () => closeModal(false));
+    }
   };
 
   // ─── Update which step is active ────────────────────────────────────────────
