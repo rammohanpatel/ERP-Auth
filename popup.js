@@ -1,6 +1,63 @@
 
 
 document.addEventListener("DOMContentLoaded", () => {
+
+  // ── Gmail connection ──────────────────────────────────────────────
+  const gmailDot   = document.getElementById("gmail-dot");
+  const gmailLabel = document.getElementById("gmail-label");
+  const gmailBtn   = document.getElementById("gmail-btn");
+
+  function setGmailStatus(connected) {
+    if (connected) {
+      gmailDot.style.background   = "#22c55e";
+      gmailLabel.textContent      = "Gmail connected";
+      gmailLabel.style.color      = "#22c55e";
+      gmailBtn.textContent        = "Disconnect";
+      gmailBtn.style.background   = "#333";
+    } else {
+      gmailDot.style.background   = "#ef4444";
+      gmailLabel.textContent      = "Gmail not connected";
+      gmailLabel.style.color      = "#ccc";
+      gmailBtn.textContent        = "Connect Gmail";
+      gmailBtn.style.background   = "linear-gradient(90deg,#FF6B6B,#4ECDC4)";
+    }
+  }
+
+  // Check if a token already exists (non-interactive = silent check)
+  chrome.identity.getAuthToken({ interactive: false }, (token) => {
+    setGmailStatus(!!token && !chrome.runtime.lastError);
+  });
+
+  gmailBtn.addEventListener("click", () => {
+    const isConnected = gmailLabel.textContent === "Gmail connected";
+
+    if (isConnected) {
+      // Revoke token
+      chrome.identity.getAuthToken({ interactive: false }, (token) => {
+        if (token) {
+          chrome.identity.removeCachedAuthToken({ token }, () => {
+            fetch(`https://accounts.google.com/o/oauth2/revoke?token=${token}`);
+            setGmailStatus(false);
+          });
+        }
+      });
+    } else {
+      // Trigger consent screen
+      gmailBtn.textContent  = "Connecting...";
+      gmailBtn.disabled     = true;
+      chrome.identity.getAuthToken({ interactive: true }, (token) => {
+        gmailBtn.disabled = false;
+        if (chrome.runtime.lastError || !token) {
+          gmailLabel.textContent = "Access denied — try again";
+          gmailLabel.style.color = "#ef4444";
+          gmailBtn.textContent   = "Connect Gmail";
+          return;
+        }
+        setGmailStatus(true);
+      });
+    }
+  });
+  // ─────────────────────────────────────────────────────────────────
   const loginIdInput = document.getElementById("loginId");
   const passwordInput = document.getElementById("password");
   const question1Input = document.getElementById("question1");

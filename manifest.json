@@ -1,7 +1,7 @@
 {
     "manifest_version": 3,
     "name": "Auto ERP Login",
-    "key": "mfapghpikfkfhejochhihcokmbjeheeg",
+    "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA3vxGLMRKm40jxATo1KhvquwwVFoubHt96xq1t8IvXojnGoUa/t3XsQ74HU4G+dYGQnqvyJqDhYAioaVRrSy7Qu+xHafzxDk9Gp9I2cP+AyenOFrEgdlF1Xcmet6D4k+s1Lm0QSHSOTZbYxqF5+HyNuV57sd+pq2HyNZk+b//SRMVDhAgfTbmtLusr6jAfXh9zceNwdDeje1BjMvh+ag5+otwYVTfOi6svvvi5lqOy61K4wsNwYxILp7N0K1zAfQU2e2HSdnPQn19gmVWAOcSSdFZx5aKybGC2b++NfWIiso7BQTaUECZMwRR1tt2TkBFSikJrbZbf+woZFlfn7nTtwIDAQAB",
     "version": "2.0",
     "description": "Automatically log in to ERP by autofilling fields.",
     "permissions": [

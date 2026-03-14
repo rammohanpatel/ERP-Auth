@@ -138,8 +138,15 @@
 
   <button id="save">Save</button>
 
-  <!-- Gmail connection status -->
+  <!-- Gmail connection -->
   <div id="gmail-card">
+    <div id="gmail-header" style="display:flex; align-items:center; justify-content:space-between; padding:12px 14px; background:#222;">
+      <div style="display:flex; align-items:center; gap:10px;">
+        <span id="gmail-dot" style="width:10px;height:10px;border-radius:50%;background:#555;flex-shrink:0;transition:background 0.3s;"></span>
+        <span id="gmail-label" style="font-size:13px;color:#ccc;">Gmail not connected</span>
+      </div>
+      <button id="gmail-btn" style="margin:0;padding:7px 14px;font-size:13px;width:auto;background:linear-gradient(90deg,#FF6B6B,#4ECDC4);">Connect Gmail</button>
+    </div>
     <div id="gmail-scope-note">
       The extension reads your Gmail <strong style="color:#ccc">only</strong> to extract the ERP OTP.
       No emails are stored or shared.
