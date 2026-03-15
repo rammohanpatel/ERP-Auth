@@ -35,6 +35,8 @@ chrome.storage.sync.get(["loginId", "password", "questions"], (data) => {
           position: fixed; inset: 0;
           display: flex; align-items: center; justify-content: center;
           z-index: 99998;
+          pointer-events: all;
+          background: transparent; /* needs a paint surface to intercept clicks */
         }
         /* Animation lives on the card itself, not the wrapper */
         #erp-modal-card {
@@ -162,6 +164,17 @@ chrome.storage.sync.get(["loginId", "password", "questions"], (data) => {
     `;
     document.body.appendChild(overlay);
     modalEl = overlay;
+
+    // Block ALL pointer/touch events from reaching the underlying page.
+    // Only events targeting the modal card itself (buttons, etc.) are allowed through.
+    ['mousedown', 'mouseup', 'click', 'touchstart', 'touchend', 'pointerdown', 'pointerup'].forEach(type => {
+      overlay.addEventListener(type, (e) => {
+        if (!e.target.closest('#erp-modal-card')) {
+          e.stopPropagation();
+          e.preventDefault();
+        }
+      }, true); // capture phase so we intercept before anything else on the page
+    });
 
     // Wire up close button — abort the whole OTP flow
     const closeBtn = overlay.querySelector('#erp-modal-close');
