@@ -1,8 +1,8 @@
 {
     "manifest_version": 3,
     "name": "Auto ERP Login",
-    "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA3vxGLMRKm40jxATo1KhvquwwVFoubHt96xq1t8IvXojnGoUa/t3XsQ74HU4G+dYGQnqvyJqDhYAioaVRrSy7Qu+xHafzxDk9Gp9I2cP+AyenOFrEgdlF1Xcmet6D4k+s1Lm0QSHSOTZbYxqF5+HyNuV57sd+pq2HyNZk+b//SRMVDhAgfTbmtLusr6jAfXh9zceNwdDeje1BjMvh+ag5+otwYVTfOi6svvvi5lqOy61K4wsNwYxILp7N0K1zAfQU2e2HSdnPQn19gmVWAOcSSdFZx5aKybGC2b++NfWIiso7BQTaUECZMwRR1tt2TkBFSikJrbZbf+woZFlfn7nTtwIDAQAB",
-    "version": "2.0",
+    "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA3HwW3IurgRFzUzg3ennpAjUZgeJw6u5gpY5s+rz0mmfjoUP5swS1iVVO7nXRGB/7SP7g7OH3OXzrPF+ch8nQaxL9j4i4QTkug9fDKQcxuUeGBkUSzURyoa/bLxfYLg1kMdtvBDPiV5HDQ4Fj+im3yy+Ga41/acXLmOMoUgTjTAYkTgsuvNT6xFbSf9cBkGkDGb+zJzPsFP9Ll75mvd8ewNyQp42F5GxGfBdwDj1vSpcskPQHNGqNP5tGzpn2lwdNlAyeN7khrL1A8a3bznvU3Bp21G85kZJniM92nI/I98CSOO7vjG5nsiblcMRLaM1uzLKNSE6kbWnNousZO54wawIDAQAB",
+    "version": "2.1",
     "description": "Automatically log in to ERP by autofilling fields.",
     "permissions": [
       "storage",
